@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase Order Generator - Multi-Item A4</title>
+    <style>
+        /* General Web Styles */
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        
+        .input-section { 
+            background: white; padding: 20px; border-radius: 8px; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1); width: 100%; max-width: 700px; 
+            margin-bottom: 30px; 
+        }
+        .input-section h2 { margin-top: 0; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 5px; }
+        .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        
+        /* Dynamic Item Rows */
+        .item-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+        .item-row input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        .item-row .item-qty { flex: 0.4; }
+        .item-row .item-price { flex: 0.6; }
+        
+        button { 
+            background-color: #0056b3; color: white; padding: 12px 15px; 
+            border: none; border-radius: 4px; cursor: pointer; font-size: 16px; 
+            font-weight: bold; width: 100%; margin-top: 10px;
+        }
+        button:hover { background-color: #004494; }
+        
+        .btn-add { background-color: #28a745; margin-bottom: 15px; width: auto; font-size: 14px; padding: 8px 12px;}
+        .btn-add:hover { background-color: #218838; }
+        
+        .btn-remove { background-color: #dc3545; padding: 10px 15px; width: auto; margin-top: 0;}
+        .btn-remove:hover { background-color: #c82333; }
+
+        /* A4 Paper Layout (Screen & Print) */
+        .po-container { 
+            display: none; 
+            background: white; 
+            width: 210mm; 
+            min-height: 297mm; 
+            padding: 20mm; 
+            box-sizing: border-box; 
+            box-shadow: 0 0 15px rgba(0,0,0,0.2); 
+        }
+        
+        /* Typography & Table Styling for PO */
+        .header-title { text-align: center; text-decoration: underline; font-size: 22px; font-weight: bold; margin-bottom: 25px; }
+        .po-header { display: flex; justify-content: space-between; margin-bottom: 20px; font-size: 14px; line-height: 1.5; }
+        .po-header div { width: 48%; }
+        .supplier-box { border: 1px solid #000; padding: 12px; margin-bottom: 20px; font-size: 14px; line-height: 1.5; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px; }
+        th, td { border: 1px solid #000; padding: 10px 8px; text-align: left; }
+        th { background-color: #f0f0f0; font-weight: bold; }
+        .totals-row td { font-weight: bold; text-align: right; }
+        
+        .amount-words { margin-bottom: 30px; font-size: 14px; }
+        .footer-section { display: flex; justify-content: space-between; margin-top: 50px; font-size: 14px; }
+
+        /* Strict Print Rules for A4 PDF */
+        @media print {
+            @page { size: A4 portrait; margin: 0; }
+            body { 
+                background: white; margin: 0; padding: 0; 
+                -webkit-print-color-adjust: exact; 
+                print-color-adjust: exact;
+            }
+            .input-section { display: none !important; }
+            .po-container { display: block; box-shadow: none; border: none; margin: 0; width: 210mm; height: 297mm; page-break-after: always; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="input-section">
+        <h2>Enter PO Details</h2>
+        <div class="form-group">
+            <label>Company Address</label>
+            <textarea id="inCompanyAddress" rows="3" placeholder="Enter your company name & address..."></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label>Items</label>
+            <div id="itemsContainer">
+                <div class="item-row">
+                    <input type="text" class="item-desc" placeholder="Description of Goods" value="ZWCAD STD (Life Time License)">
+                    <input type="number" class="item-price" placeholder="Unit Price (₹)" value="65000">
+                    <input type="number" class="item-qty" placeholder="Qty" value="1">
+                    <button type="button" class="btn-remove" onclick="removeItem(this)">X</button>
+                </div>
+            </div>
+            <button type="button" class="btn-add" onclick="addItem()">+ Add Another Item</button>
+        </div>
+
+        <button onclick="generateAndPrintPO()">Generate & Save as PDF (A4)</button>
+    </div>
+
+    <div class="po-container" id="poContainer">
+        <div class="header-title">PURCHASE ORDER</div>
+        
+        <div class="po-header">
+            <div>
+                <strong>Company Address:</strong><br>
+                <span id="outCompanyAddress"></span>
+            </div>
+            <div>
+                <strong>P.O Number:</strong> <span id="outPoNumber"></span><br>
+                <strong>Dated:</strong> <span id="outDate"></span><br>
+                <strong>Mode/Terms of Payment:</strong> Immediate<br>
+                <strong>Supplier's Ref Number:</strong> 
+            </div>
+        </div>
+
+        <div class="supplier-box">
+            <strong>Supplier:</strong> Technosys Soft Solutions<br>
+            G2, Srinidhi Apartments, 2nd Cross, Nagappa Block, Srirampuram, Bangalore -21<br>
+            <strong>GSTIN NO:</strong> 29AHYPK9670M1Z0<br>
+            <strong>Terms of Delivery:</strong> Electronic Delivery
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 8%;">Sl. No</th>
+                    <th style="width: 48%;">Description of Goods</th>
+                    <th style="width: 17%;">Unit Price</th>
+                    <th style="width: 10%;">Quantity</th>
+                    <th style="width: 17%;">Amount</th>
+                </tr>
+            </thead>
+            <tbody id="poTableBody">
+            </tbody>
+        </table>
+
+        <div class="amount-words">
+            <strong>Amount Chargeable (in words):</strong> Rupees <span id="outWords"></span> Only.
+        </div>
+        
+        <div class="footer-section">
+            <div style="width: 60%;">
+                <strong>Remarks:</strong><br> All other terms & conditions as per your quote.
+            </div>
+            <div style="text-align: right; width: 40%;">
+                For <span id="outSignCompany" style="font-weight: bold;"></span><br><br><br><br>
+                <strong>Authorized Signature</strong>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Number to Words Function
+        function numberToWords(num) {
+            const a = ['','One ','Two ','Three ','Four ', 'Five ','Six ','Seven ','Eight ','Nine ','Ten ','Eleven ','Twelve ','Thirteen ','Fourteen ','Fifteen ','Sixteen ','Seventeen ','Eighteen ','Nineteen '];
+            const b = ['', '', 'Twenty','Thirty','Forty','Fifty', 'Sixty','Seventy','Eighty','Ninety'];
+            if ((num = num.toString()).length > 9) return 'Overflow';
+            let n = ('000000000' + num).substr(-9).match(/^(\d{2})(\d{2})(\d{2})(\d{1})(\d{2})$/);
+            if (!n) return ''; 
+            let str = '';
+            str += (n[1] != 0) ? (a[Number(n[1])] || b[n[1][0]] + ' ' + a[n[1][1]]) + 'Crore ' : '';
+            str += (n[2] != 0) ? (a[Number(n[2])] || b[n[2][0]] + ' ' + a[n[2][1]]) + 'Lakh ' : '';
+            str += (n[3] != 0) ? (a[Number(n[3])] || b[n[3][0]] + ' ' + a[n[3][1]]) + 'Thousand ' : '';
+            str += (n[4] != 0) ? (a[Number(n[4])] || b[n[4][0]] + ' ' + a[n[4][1]]) + 'Hundred ' : '';
+            str += (n[5] != 0) ? ((str != '') ? 'and ' : '') + (a[Number(n[5])] || b[n[5][0]] + ' ' + a[n[5][1]]) : '';
+            return str.trim();
+        }
+
+        // Add a new row to the inputs
+        function addItem() {
+            const container = document.getElementById('itemsContainer');
+            const newRow = document.createElement('div');
+            newRow.className = 'item-row';
+            newRow.innerHTML = `
+                <input type="text" class="item-desc" placeholder="Description of Goods" value="ZWCAD STD (Life Time License)">
+                <input type="number" class="item-price" placeholder="Unit Price (₹)">
+                <input type="number" class="item-qty" placeholder="Qty" value="1">
+                <button type="button" class="btn-remove" onclick="removeItem(this)">X</button>
+            `;
+            container.appendChild(newRow);
+        }
+
+        // Remove a row from the inputs
+        function removeItem(button) {
+            button.parentElement.remove();
+        }
+
+        // Main Generation Logic
+        function generateAndPrintPO() {
+            // 1. Static Metadata
+            const companyAddress = document.getElementById('inCompanyAddress').value || 'Default Company Ltd.';
+            const today = new Date();
+            const dateString = today.toLocaleDateString('en-GB'); 
+            const randomPoNum = 'PO-' + Math.floor(1000 + Math.random() * 9000); 
+
+            document.getElementById('outCompanyAddress').innerHTML = companyAddress.replace(/\n/g, '<br>');
+            document.getElementById('outSignCompany').innerText = companyAddress.split('\n')[0]; 
+            document.getElementById('outPoNumber').innerText = randomPoNum;
+            document.getElementById('outDate').innerText = dateString;
+
+            // 2. Dynamic Table Row Generation
+            const itemRows = document.querySelectorAll('.item-row');
+            let subTotal = 0;
+            let tableHTML = '';
+
+            itemRows.forEach((row, index) => {
+                const desc = row.querySelector('.item-desc').value || 'Unspecified Item';
+                const price = parseFloat(row.querySelector('.item-price').value) || 0;
+                const qty = parseInt(row.querySelector('.item-qty').value) || 1;
+                const amount = price * qty;
+                
+                subTotal += amount;
+
+                // Format numbers to Indian currency style
+                const formattedPrice = price.toLocaleString('en-IN', {minimumFractionDigits: 2});
+                const formattedAmount = amount.toLocaleString('en-IN', {minimumFractionDigits: 2});
+                const serialNumber = (index + 1).toString().padStart(2, '0');
+
+                // Build the HTML for this specific row
+                tableHTML += `
+                    <tr>
+                        <td>${serialNumber}</td>
+                        <td>${desc}</td>
+                        <td>₹ ${formattedPrice}</td>
+                        <td>${qty}</td>
+                        <td>₹ ${formattedAmount}</td>
+                    </tr>
+                `;
+            });
+
+            // 3. Totals Calculations
+            const gst = subTotal * 0.18; 
+            const grandTotal = subTotal + gst;
+
+            // Add the GST and Grand Total rows
+            tableHTML += `
+                <tr>
+                    <td colspan="4" class="totals-row">GST @ 18%</td>
+                    <td id="outGST">₹ ${gst.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                </tr>
+                <tr>
+                    <td colspan="4" class="totals-row">Grand Total</td>
+                    <td id="outGrandTotal" style="font-weight: bold;">₹ ${grandTotal.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                </tr>
+            `;
+
+            // 4. Inject into the DOM
+            document.getElementById('poTableBody').innerHTML = tableHTML;
+            document.getElementById('outWords').innerText = numberToWords(Math.round(grandTotal));
+
+            // 5. Trigger Print
+            document.getElementById('poContainer').style.display = 'block';
+            setTimeout(() => {
+                window.print();
+            }, 100);
+        }
+    </script>
+</body>
+</html>
